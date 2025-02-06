@@ -9,3 +9,21 @@ torch
 transformers==4.38.1
 umap-learn==0.5.5
 urllib3==1.26.6 
+fastapi==0.104.1
+uvicorn==0.24.0
+python-multipart==0.0.6
+pydantic==2.5.2
+python-jose==3.3.0
+passlib==1.7.4
+python-dotenv==1.0.0
+tiktoken>=0.5.1
+regex>=2022.1.18
+requests>=2.26.0
+numpy>=1.19.2
+scikit-learn>=0.24.2
+networkx>=2.5
+openai>=0.27.0
+# 测试依赖
+pytest>=7.0.0
+pytest-asyncio>=0.18.0
+httpx>=0.24.0  # 用于TestClient
