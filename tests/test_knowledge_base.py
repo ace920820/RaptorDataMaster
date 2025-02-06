@@ -68,14 +68,35 @@ def cleanup_test_data():
                 logger.error(f"删除文件失败: {file}, 错误: {str(e)}")
 
 @pytest.fixture
-def test_storage():
+def mock_ra():
+    """模拟RetrievalAugmentation"""
+    with patch('knowledge_base.storage.RetrievalAugmentation') as mock_ra:
+        instance = mock_ra.return_value
+        # 模拟add_documents方法
+        instance.add_documents.return_value = None
+        # 模拟save方法
+        instance.save.return_value = None
+        # 模拟get_all_nodes_info方法
+        instance.get_all_nodes_info.return_value = {
+            "leaf_nodes": [],
+            "summary_nodes": {},
+            "num_layers": 1,
+            "total_nodes": 0
+        }
+        yield instance
+
+@pytest.fixture
+def test_storage(mock_ra):
     """创建测试用的存储实例
     
     Returns:
         DocumentStorage: 配置为使用测试数据目录的存储实例
     """
     logger.info("创建测试存储实例")
-    storage = DocumentStorage(storage_dir=TEST_DATA_DIR)
+    storage = DocumentStorage(
+        storage_dir=TEST_DATA_DIR,
+        SAVE_PATH=os.path.join(TEST_DATA_DIR, "test_tree")
+    )
     logger.info(f"测试存储实例创建成功，使用目录: {TEST_DATA_DIR}")
     return storage
 
@@ -121,28 +142,20 @@ def test_manager():
 class TestStorage:
     """存储模块测试"""
     
-    def test_save_document(self, test_storage):
+    def test_save_document(self, test_storage, mock_ra):
         """测试保存文档"""
         logger.info("测试保存文档")
         doc_id = "test_doc_1"
         content = "这是测试文档内容"
-        tree_data = {
-            "leaf_nodes": [],
-            "summary_nodes": {},
-            "num_layers": 1,
-            "total_nodes": 0
-        }
         
         # 保存文档
-        result = test_storage.save_document(doc_id, content, tree_data)
+        result = test_storage.save_document(doc_id, content)
         assert result == True
         logger.info("文档保存成功")
         
         # 验证文件是否存在
         doc_path = os.path.join(TEST_DATA_DIR, f"{doc_id}.txt")
-        tree_path = os.path.join(TEST_DATA_DIR, f"{doc_id}_tree.json")
         assert os.path.exists(doc_path)
-        assert os.path.exists(tree_path)
         logger.info("文档文件存在")
         
         # 验证内容是否正确
@@ -151,31 +164,29 @@ class TestStorage:
         assert saved_content == content
         logger.info("文档内容正确")
         
-        with open(tree_path, "r", encoding="utf-8") as f:
-            saved_tree = json.load(f)
-        assert saved_tree == tree_data
-        logger.info("文档树结构正确")
+        # 验证RA方法是否被调用
+        mock_ra.add_documents.assert_called_once_with(content)
+        mock_ra.save.assert_called_once()
+        logger.info("RA方法调用正确")
     
-    def test_get_document(self, test_storage):
+    def test_get_document(self, test_storage, mock_ra):
         """测试获取文档"""
         logger.info("测试获取文档")
         # 先保存一个测试文档
         doc_id = "test_doc_2"
         content = "测试文档2的内容"
-        tree_data = {
-            "leaf_nodes": [],
-            "summary_nodes": {},
-            "num_layers": 1,
-            "total_nodes": 0
-        }
-        test_storage.save_document(doc_id, content, tree_data)
+        test_storage.save_document(doc_id, content)
         
         # 获取文档
         doc_info = test_storage.get_document(doc_id)
         assert doc_info is not None
         assert doc_info["content"] == content
-        assert doc_info["tree"] == tree_data
+        assert "tree" in doc_info
         logger.info("文档获取成功")
+        
+        # 验证RA方法是否被调用
+        mock_ra.get_all_nodes_info.assert_called_once()
+        logger.info("RA方法调用正确")
     
     def test_delete_document(self, test_storage):
         """测试删除文档"""
@@ -183,13 +194,7 @@ class TestStorage:
         # 先保存一个测试文档
         doc_id = "test_doc_3"
         content = "测试文档3的内容"
-        tree_data = {
-            "leaf_nodes": [],
-            "summary_nodes": {},
-            "num_layers": 1,
-            "total_nodes": 0
-        }
-        test_storage.save_document(doc_id, content, tree_data)
+        test_storage.save_document(doc_id, content)
         
         # 删除文档
         result = test_storage.delete_document(doc_id)
@@ -198,9 +203,7 @@ class TestStorage:
         
         # 验证文件是否已删除
         doc_path = os.path.join(TEST_DATA_DIR, f"{doc_id}.txt")
-        tree_path = os.path.join(TEST_DATA_DIR, f"{doc_id}_tree.json")
         assert not os.path.exists(doc_path)
-        assert not os.path.exists(tree_path)
         logger.info("文档文件已删除")
 
 class TestUploader:
