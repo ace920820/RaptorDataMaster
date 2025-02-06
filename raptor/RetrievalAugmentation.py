@@ -347,8 +347,8 @@ class RetrievalAugmentation:
         for layer in range(self.tree.num_layers):
             if layer in self.tree.layer_to_nodes:
                 result["summary_nodes"][layer] = []
-                for node_idx in self.tree.layer_to_nodes[layer]:
-                    node = self.tree.all_nodes[node_idx]
+                for node in self.tree.layer_to_nodes[layer]:
+                    # node = self.tree.all_nodes[node_idx]
                     result["summary_nodes"][layer].append({
                         "text": node.text,
                         "index": node.index,

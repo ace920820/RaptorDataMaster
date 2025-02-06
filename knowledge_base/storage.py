@@ -1,11 +1,17 @@
 """
-存储模块 - 负责文档树的存储和管理
+存储模块 - 负责文档的存储、检索和树结构管理
 """
 import json
 import os
+import sys
 from typing import Dict, List, Optional
 import logging
 from datetime import datetime
+
+# 添加项目根目录到Python路径
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(PROJECT_ROOT)
+
 from raptor import RetrievalAugmentation
 
 # 配置日志
@@ -16,13 +22,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class DocumentStorage:
-    def __init__(self, storage_dir: str = "data/files", SAVE_PATH: str = "DATA/default_tree"):
+    """文档存储类 - 负责文档的存储、检索和树结构管理"""
+    
+    def __init__(self, storage_dir: str = "data/files", tree_save_path: str = "data/default_tree"):
         """
         初始化文档存储类
         
         Args:
             storage_dir: 文档存储目录
-            SAVE_PATH: RA树结构保存路径
+            tree_save_path: RA树结构保存路径
         """
         self.storage_dir = storage_dir
         self.metadata_file = os.path.join(storage_dir, "metadata.json")
@@ -30,10 +38,10 @@ class DocumentStorage:
         self.metadata = self._load_metadata()
         
         # 初始化RA
-        self.SAVE_PATH = SAVE_PATH
-        os.makedirs(os.path.dirname(SAVE_PATH), exist_ok=True)
-        self.RA = RetrievalAugmentation(tree=self.SAVE_PATH)
-        logger.info(f"初始化文档存储，存储目录: {storage_dir}, RA保存路径: {SAVE_PATH}")
+        self.tree_save_path = tree_save_path
+        os.makedirs(os.path.dirname(tree_save_path), exist_ok=True)
+        self.RA = RetrievalAugmentation(tree=tree_save_path)
+        logger.info(f"初始化文档存储，存储目录: {storage_dir}, RA保存路径: {tree_save_path}")
     
     def _ensure_storage_exists(self):
         """确保存储目录和元数据文件存在"""
@@ -59,17 +67,16 @@ class DocumentStorage:
         except Exception as e:
             logger.error(f"保存元数据失败: {str(e)}")
     
-    def save_document(self, doc_id: str, content: str, tree_data: Dict = None) -> bool:
+    def add_document(self, doc_id: str, content: str) -> bool:
         """
-        保存文档内容和树结构
+        添加新文档，包括保存文件、更新树结构和元数据
         
         Args:
             doc_id: 文档ID
             content: 文档内容
-            tree_data: 树结构数据（已废弃，保留参数是为了兼容性）
             
         Returns:
-            bool: 是否保存成功
+            bool: 是否添加成功
         """
         try:
             # 保存文档内容
@@ -80,7 +87,7 @@ class DocumentStorage:
             # 更新RA树结构
             logger.info(f"将文档 {doc_id} 添加到RA树结构")
             self.RA.add_documents(content)
-            self.RA.save(self.SAVE_PATH)
+            self.RA.save(self.tree_save_path)
             
             # 更新元数据
             self.metadata[doc_id] = {
@@ -89,10 +96,10 @@ class DocumentStorage:
             }
             self._save_metadata()
             
-            logger.info(f"文档 {doc_id} 保存成功")
+            logger.info(f"文档 {doc_id} 添加成功")
             return True
         except Exception as e:
-            logger.error(f"保存文档 {doc_id} 失败: {str(e)}")
+            logger.error(f"添加文档 {doc_id} 失败: {str(e)}")
             return False
     
     def get_document(self, doc_id: str) -> Optional[Dict]:
@@ -107,6 +114,7 @@ class DocumentStorage:
         """
         try:
             if doc_id not in self.metadata:
+                logger.warning(f"文档不存在: {doc_id}")
                 return None
             
             doc_info = self.metadata[doc_id]
@@ -117,6 +125,10 @@ class DocumentStorage:
             
             # 获取树结构
             logger.info(f"从RA获取文档 {doc_id} 的树结构")
+            if not self.RA.tree:
+                logger.error("RA树未初始化")
+                return None
+                
             tree_data = self.RA.get_all_nodes_info()
             
             return {
@@ -131,7 +143,7 @@ class DocumentStorage:
     
     def delete_document(self, doc_id: str) -> bool:
         """
-        删除文档
+        删除文档，包括文件、树结构和元数据
         
         Args:
             doc_id: 文档ID
@@ -141,6 +153,7 @@ class DocumentStorage:
         """
         try:
             if doc_id not in self.metadata:
+                logger.warning(f"文档不存在: {doc_id}")
                 return False
             
             doc_info = self.metadata[doc_id]
@@ -163,13 +176,13 @@ class DocumentStorage:
         except Exception as e:
             logger.error(f"删除文档 {doc_id} 失败: {str(e)}")
             return False
-    
+
     def list_documents(self) -> List[Dict]:
         """
         列出所有文档
         
         Returns:
-            List[Dict]: 文档列表
+            List[Dict]: 文档列表，每个文档包含id和created_at信息
         """
         try:
             documents = []
@@ -182,3 +195,30 @@ class DocumentStorage:
         except Exception as e:
             logger.error(f"列出文档失败: {str(e)}")
             return []
+    
+    def get_tree_info(self) -> Dict:
+        """
+        获取当前树的统计信息
+        
+        Returns:
+            Dict: 树的统计信息，包括层数、节点数等
+        """
+        try:
+            if not self.RA.tree:
+                return {
+                    "num_layers": 0,
+                    "total_nodes": 0,
+                    "leaf_nodes": 0,
+                    "summary_nodes": 0
+                }
+            
+            tree = self.RA.tree
+            return {
+                "num_layers": tree.num_layers,
+                "total_nodes": len(tree.all_nodes),
+                "leaf_nodes": len(tree.leaf_nodes),
+                "summary_nodes": len(tree.all_nodes) - len(tree.leaf_nodes)
+            }
+        except Exception as e:
+            logger.error(f"获取树信息失败: {str(e)}")
+            return {}

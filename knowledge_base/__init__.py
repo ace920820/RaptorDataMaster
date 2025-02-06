@@ -4,7 +4,6 @@
 """
 
 from .api import app
-from .manage import DocumentManager
 from .storage import DocumentStorage
 from .upload import FileUploader
 
